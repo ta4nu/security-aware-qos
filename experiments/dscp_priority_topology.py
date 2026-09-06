@@ -6,20 +6,26 @@ from mininet.log import setLogLevel, info
 import time
 
 
-def apply_htb_prio(host, iface, total_rate_mbit=10):
+def apply_htb_prio(node, iface, total_rate_mbit=10):
     """
-    Configures HTB + PRIO queuing on the given interface of `host`.
+    Configures HTB + PRIO queuing on the given interface of `node`.
+
+    IMPORTANT: tc qdiscs control EGRESS (outgoing) traffic on an interface.
+    To prioritize traffic arriving at h3, this must be applied on the
+    interface that carries traffic OUT toward h3 - that is the switch's
+    port facing h3, NOT h3's own interface (h3 barely sends anything out,
+    just ACKs, so queuing there has no effect on the real data flows).
 
     Creates:
       - A root HTB qdisc capping total bandwidth at total_rate_mbit.
       - Two child classes: high-priority (EF, DSCP 46) gets guaranteed
         bandwidth and goes first; low-priority (BE, DSCP 0) gets the
         remainder.
-      - tc filters that match on DSCP value (via the IP ToS/DSCP field)
-        and send packets into the correct class.
+      - A tc filter that matches on DSCP value (via the IP ToS/DSCP field)
+        and sends packets into the correct class.
     """
     cmds = [
-        f"tc qdisc del dev {iface} root",  
+        f"tc qdisc del dev {iface} root",
         f"tc qdisc add dev {iface} root handle 1: htb default 20",
         f"tc class add dev {iface} parent 1: classid 1:1 htb rate {total_rate_mbit}mbit",
         f"tc class add dev {iface} parent 1:1 classid 1:10 htb rate {int(total_rate_mbit*0.7)}mbit ceil {total_rate_mbit}mbit prio 0",
@@ -30,7 +36,11 @@ def apply_htb_prio(host, iface, total_rate_mbit=10):
         f"match ip tos 0xb8 0xfc flowid 1:10",
     ]
     for c in cmds:
-        host.cmd(c + " 2>/dev/null")
+            node.cmd(c + " 2>/dev/null")
+        else:
+            out = node.cmd(c)
+            if out.strip():
+                print(f"[tc] {c}\n    -> {out.strip()}")
 
 
 def run_dscp_experiment():
@@ -41,8 +51,8 @@ def run_dscp_experiment():
 
     info('*** Adding hosts\n')
     h1 = net.addHost('h1', ip='10.0.0.1/24')  
-    h2 = net.addHost('h2', ip='10.0.0.2/24') 
-    h3 = net.addHost('h3', ip='10.0.0.3/24') 
+    h2 = net.addHost('h2', ip='10.0.0.2/24')  
+    h3 = net.addHost('h3', ip='10.0.0.3/24')  
 
     info('*** Adding switch\n')
     s1 = net.addSwitch('s1')
@@ -50,16 +60,16 @@ def run_dscp_experiment():
     info('*** Creating links (shared 10 Mbps bottleneck at the receiver side)\n')
     net.addLink(h1, s1, bw=10, delay='10ms')
     net.addLink(h2, s1, bw=10, delay='10ms')
-  
     net.addLink(h3, s1, bw=10, delay='10ms')
 
     info('*** Starting network\n')
     net.start()
     net.pingAll()
 
-    h3_iface = h3.defaultIntf().name
-    info(f'*** Applying HTB+PRIO QoS on {h3_iface}\n')
-    apply_htb_prio(h3, h3_iface, total_rate_mbit=10)
+    link_h3 = h3.connectionsTo(s1)[0]
+    switch_iface = link_h3[1].name
+    info(f'*** Applying HTB+PRIO QoS on switch interface {switch_iface} (facing h3) ***\n')
+    apply_htb_prio(s1, switch_iface, total_rate_mbit=10)
 
     info('*** Starting iperf3 server on h3\n')
     h3.cmd('iperf3 -s -p 5201 -D')
@@ -73,6 +83,9 @@ def run_dscp_experiment():
 
     info('*** Waiting for both flows to finish (12s) ***\n')
     time.sleep(12)
+
+    info('\n*** tc class counters on the switch interface (check EF vs BE byte counts) ***\n')
+    print(s1.cmd(f'tc -s class show dev {switch_iface}'))
 
     info('\n*** Results saved to /tmp/h1_ef_result.json (high-priority) '
          'and /tmp/h2_be_result.json (low-priority) ***\n')
