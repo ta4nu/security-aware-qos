@@ -36,6 +36,7 @@ def apply_htb_prio(node, iface, total_rate_mbit=10):
         f"match ip tos 0xb8 0xfc flowid 1:10",
     ]
     for c in cmds:
+        if "qdisc del" in c:
             node.cmd(c + " 2>/dev/null")
         else:
             out = node.cmd(c)
@@ -50,9 +51,9 @@ def run_dscp_experiment():
     net.addController('c0', controller=Controller)
 
     info('*** Adding hosts\n')
-    h1 = net.addHost('h1', ip='10.0.0.1/24')  
-    h2 = net.addHost('h2', ip='10.0.0.2/24')  
-    h3 = net.addHost('h3', ip='10.0.0.3/24')  
+    h1 = net.addHost('h1', ip='10.0.0.1/24')  # high-priority sender (EF)
+    h2 = net.addHost('h2', ip='10.0.0.2/24')  # low-priority sender (BE)
+    h3 = net.addHost('h3', ip='10.0.0.3/24')  # receiver / edge gateway
 
     info('*** Adding switch\n')
     s1 = net.addSwitch('s1')
@@ -65,7 +66,6 @@ def run_dscp_experiment():
     info('*** Starting network\n')
     net.start()
     net.pingAll()
-
     link_h3 = h3.connectionsTo(s1)[0]
     switch_iface = link_h3[1].name
     info(f'*** Applying HTB+PRIO QoS on switch interface {switch_iface} (facing h3) ***\n')
