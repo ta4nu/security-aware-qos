@@ -98,6 +98,3 @@ sudo python3 dscp_priority_topology.py
 
 ## References
 See `docs/references.md` for the full list of cited works (IEEE Communications Surveys & Tutorials, IEEE Network, IEEE/ACM Transactions on Networking, IEEE Access, IEEE WCNC 2025, IEEE GLOBECOM 2024/2025, and RFC 2474/4594).
-
-## License
-This is an academic mini-project for CS23502 (Networks and Data Communication). No license specified — for coursework use.
