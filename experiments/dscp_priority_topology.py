@@ -5,6 +5,50 @@ from mininet.link import TCLink
 from mininet.log import setLogLevel, info
 import time
 import json
+import re
+import subprocess
+from subprocess import PIPE
+
+TEST_SECONDS = 10   # length of each iperf3 flow
+
+
+def class_bytes(node, iface):
+    """Return {'1:10': bytes, '1:20': bytes, ...} sent per HTB class, read from tc."""
+    out = node.cmd(f'tc -s class show dev {iface}')
+    counts, current = {}, None
+    for line in out.splitlines():
+        line = line.strip()
+        m = re.match(r'class htb (\d+:\d+)', line)
+        if m:
+            current = m.group(1)
+        m = re.match(r'Sent (\d+) bytes', line)
+        if m and current:
+            counts[current] = int(m.group(1))
+    return counts
+
+
+def summarize_iperf(label, out, err):
+    """Print sender throughput from iperf3's per-second intervals.
+
+    The per-second intervals are used (not the 'end' section) because the
+    end-of-test summary is unreliable on this shaped Mininet link.
+    """
+    try:
+        data = json.loads(out)
+    except Exception:
+        print(f'{label}: no JSON output from iperf3. stderr: {err.strip()[:200]}')
+        return
+    if data.get('error'):
+        print(f'{label}: iperf3 reported: {data["error"]}')
+    intervals = data.get('intervals', [])
+    if not intervals:
+        print(f'{label}: no data intervals recorded')
+        return
+    total_bytes = sum(i['sum']['bytes'] for i in intervals)
+    secs = sum(i['sum']['seconds'] for i in intervals)
+    retr = sum(i['sum'].get('retransmits', 0) for i in intervals)
+    print(f'{label}: sent {total_bytes / 1e6:.2f} MB in {secs:.1f}s = '
+          f'{total_bytes * 8 / secs / 1e6:.2f} Mbps, retransmits = {retr}')
 
 
 def apply_htb_prio(node, iface, total_rate_mbit=10):
@@ -91,30 +135,53 @@ def run_dscp_experiment():
     h3.cmd('iperf3 -s -p 5202 -D')   # for h2 (low-priority, BE)
     time.sleep(1)
 
-    info('\n*** Sending HIGH-PRIORITY (EF, DSCP 46) traffic from h1 (port 5201) ***\n')
-    # --dscp 46 tags packets as Expedited Forwarding (EF)
-    h1.cmd('iperf3 -c 10.0.0.3 -p 5201 -t 10 -b 5M --dscp 46 -J > /tmp/h1_ef_result.json &')
+    bytes_before = class_bytes(s1, switch_iface)
 
-    info('*** Sending LOW-PRIORITY (BE, DSCP 0) traffic from h2 (port 5202, competing at the same time) ***\n')
-    h2.cmd('iperf3 -c 10.0.0.3 -p 5202 -t 10 -b 8M -J > /tmp/h2_be_result.json &')
+    # NOTE ON TAGGING: iperf3 3.9's --dscp option did NOT produce DSCP-46
+    # packets in our VM (iptables counters at h3 showed 0 matches). Setting
+    # the TOS byte directly with -S did: DSCP 46 (EF) << 2 = 184 = 0xB8, and
+    # 990 of 1005 packets to the server were seen with DSCP 46.
+    info('\n*** HIGH-PRIORITY flow: h1 -> h3, EF (TOS 184 = DSCP 46), 5 Mbps offered ***\n')
+    p1 = h1.popen(['iperf3', '-c', '10.0.0.3', '-p', '5201', '-t', str(TEST_SECONDS),
+                   '-b', '5M', '-S', '184', '-J'],
+                  stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
-    info('*** Waiting for both flows to finish (14s) ***\n')
-    time.sleep(14)
+    info('*** LOW-PRIORITY flow:  h2 -> h3, BE (DSCP 0), 8 Mbps offered, same time ***\n')
+    p2 = h2.popen(['iperf3', '-c', '10.0.0.3', '-p', '5202', '-t', str(TEST_SECONDS),
+                   '-b', '8M', '-J'],
+                  stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
-    info('\n*** tc class counters on the switch interface (EF class 1:10 vs BE class 1:20) ***\n')
+    # Wait for the clients to actually finish (instead of a fixed sleep)
+    info('*** Waiting for both flows to finish ***\n')
+    outputs = []
+    for label, proc in (('HIGH-PRIORITY (EF, h1)', p1), ('LOW-PRIORITY  (BE, h2)', p2)):
+        try:
+            out, err = proc.communicate(timeout=TEST_SECONDS + 40)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+        outputs.append((label, out, err))
+        with open('/tmp/' + ('h1_ef' if 'EF' in label else 'h2_be') + '_result.json', 'w') as f:
+            f.write(out)
+
+    bytes_after = class_bytes(s1, switch_iface)
+
+    info('\n*** tc class counters on the switch interface ***\n')
     print(s1.cmd(f'tc -s class show dev {switch_iface}'))
 
     info('\n*** RESULTS SUMMARY ***\n')
-    for label, path in [('HIGH-PRIORITY (EF, h1)', '/tmp/h1_ef_result.json'),
-                        ('LOW-PRIORITY  (BE, h2)', '/tmp/h2_be_result.json')]:
-        try:
-            with open(path) as f:
-                end = json.load(f).get('end', {})
-            sent = end['sum_sent']['bits_per_second'] / 1e6
-            retr = end['sum_sent'].get('retransmits', 'n/a')
-            print(f'{label}: sent = {sent:.2f} Mbps, retransmits = {retr}')
-        except Exception as e:
-            print(f'{label}: could not read results ({e})')
+    for label, out, err in outputs:
+        summarize_iperf(label, out, err)
+
+    ef = bytes_after.get('1:10', 0) - bytes_before.get('1:10', 0)
+    be = bytes_after.get('1:20', 0) - bytes_before.get('1:20', 0)
+    print('\nBytes through the switch queue during the test (measured by tc):')
+    print(f'  EF class 1:10: {ef} bytes  (about {ef * 8 / TEST_SECONDS / 1e6:.2f} Mbps)')
+    print(f'  BE class 1:20: {be} bytes  (about {be * 8 / TEST_SECONDS / 1e6:.2f} Mbps)')
+    if ef == 0:
+        print('  -> EF class saw NO traffic: the DSCP filter did not match the h1 flow.')
+    else:
+        print('  -> EF class is receiving the h1 flow: DSCP classification works.')
 
     info('\n*** Raw JSON saved in /tmp/h1_ef_result.json and /tmp/h2_be_result.json ***\n')
     info('*** Dropping into CLI - type "exit" to stop the network ***\n')
