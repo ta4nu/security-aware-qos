@@ -1,0 +1,27 @@
+class htb 1:10 parent 1:1 leaf 10: prio 0 rate 7Mbit ceil 10Mbit burst 1598b cburst 1600b 
+ Sent 6548778 bytes 4349 pkt (dropped 0, overlimits 2148 requeues 0) 
+ backlog 0b 0p requeues 0
+ lended: 2203 borrowed: 1 giants: 0
+ tokens: 27383 ctokens: 19175
+
+class htb 1:1 root rate 10Mbit ceil 10Mbit burst 1600b cburst 1600b 
+ Sent 12715311 bytes 8478 pkt (dropped 0, overlimits 813 requeues 0) 
+ backlog 0b 0p requeues 0
+ lended: 819 borrowed: 0 giants: 0
+ tokens: 18662 ctokens: 18662
+
+class htb 1:20 parent 1:1 leaf 20: prio 1 rate 3Mbit ceil 10Mbit burst 1599b cburst 1600b 
+ Sent 6166533 bytes 4129 pkt (dropped 6, overlimits 1994 requeues 0) 
+ backlog 0b 0p requeues 0
+ lended: 1476 borrowed: 818 giants: 0
+ tokens: 62197 ctokens: 18662
+
+
+HIGH-PRIORITY (EF, h1): no JSON output from iperf3. stderr: 
+LOW-PRIORITY  (BE, h2): sent 5.67 MB in 9.0s = 5.04 Mbps, retransmits = 12
+
+Bytes through the switch queue during the test (measured by tc):
+  EF class 1:10: 6548778 bytes  (about 5.24 Mbps)
+  BE class 1:20: 6164477 bytes  (about 4.93 Mbps)
+  -> EF class is receiving the h1 flow: DSCP classification works.
+mininet> 
