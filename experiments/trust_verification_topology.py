@@ -166,6 +166,10 @@ def run_trust_experiment():
     info(f'\n*** TRUST MODULE: polling every {POLL_SECONDS}s, R_exp(EF)={R_EXP_EF_MBPS} Mbps, theta={THETA} ***\n')
     prev_counts = {ip: 0 for ip in EF_SOURCES}
     demoted = set()
+    violation_streak = {ip: 0 for ip in EF_SOURCES}
+    CONSECUTIVE_VIOLATIONS_REQUIRED = 2  # avoids a single noisy sample (e.g.
+                                          # TCP slow-start on a legit flow)
+                                          # triggering a permanent demotion
     elapsed = 0
     while elapsed < TEST_SECONDS:
         time.sleep(POLL_SECONDS)
@@ -178,15 +182,22 @@ def run_trust_experiment():
             prev_counts[ip] = cur
             r_obs = (delta_bytes * 8) / (POLL_SECONDS * 1e6)  # Mbps
             trust = 1 - abs(r_obs - R_EXP_EF_MBPS) / R_EXP_EF_MBPS
-            status = 'TRUSTED'
+
             if trust < THETA:
-                status = 'SUSPICIOUS'
-                if ip not in demoted:
-                    demote_source(s1, switch_iface, ip)
-                    demoted.add(ip)
-                    status = 'SUSPICIOUS -> DEMOTED NOW'
-                else:
-                    status = 'SUSPICIOUS (already demoted)'
+                violation_streak[ip] += 1
+            else:
+                violation_streak[ip] = 0  # a trusted poll clears the streak
+
+            if ip in demoted:
+                status = 'SUSPICIOUS (already demoted)' if trust < THETA else 'TRUSTED (still demoted from earlier)'
+            elif violation_streak[ip] >= CONSECUTIVE_VIOLATIONS_REQUIRED:
+                demote_source(s1, switch_iface, ip)
+                demoted.add(ip)
+                status = f'SUSPICIOUS x{violation_streak[ip]} -> DEMOTED NOW'
+            elif trust < THETA:
+                status = f'suspicious ({violation_streak[ip]}/{CONSECUTIVE_VIOLATIONS_REQUIRED}, not yet demoted)'
+            else:
+                status = 'TRUSTED'
             print(f'{label:32s} R_obs={r_obs:6.2f} Mbps  T={trust:6.2f}  [{status}]')
 
     info('\n*** Waiting for flows to finish ***\n')
