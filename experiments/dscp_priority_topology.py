@@ -26,29 +26,35 @@ def class_bytes(node, iface):
             counts[current] = int(m.group(1))
     return counts
 
+_SENDER_RE = re.compile(
+    r'([\d.]+)\s+(KBytes|MBytes|GBytes)\s+([\d.]+)\s+(Kbits/sec|Mbits/sec|Gbits/sec)'
+    r'(?:\s+(\d+))?\s+sender'
+)
+
 
 def summarize_iperf(label, out, err):
-    """Print sender throughput from iperf3's per-second intervals.
-
-    The per-second intervals are used (not the 'end' section) because the
-    end-of-test summary is unreliable on this shaped Mininet link.
-    """
-    try:
-        data = json.loads(out)
-    except Exception:
-        print(f'{label}: no JSON output from iperf3. stderr: {err.strip()[:200]}')
+    """Parse the final 'sender' summary line from iperf3's plain-text output."""
+    match = None
+    for line in out.splitlines():
+        m = _SENDER_RE.search(line)
+        if m:
+            match = m
+    if not match:
+        hint = err.strip()[:200] or '(no stderr either - process likely hung or was killed before producing output)'
+        print(f'{label}: could not find a sender summary line. stderr: {hint}')
         return
-    if data.get('error'):
-        print(f'{label}: iperf3 reported: {data["error"]}')
-    intervals = data.get('intervals', [])
-    if not intervals:
-        print(f'{label}: no data intervals recorded')
-        return
-    total_bytes = sum(i['sum']['bytes'] for i in intervals)
-    secs = sum(i['sum']['seconds'] for i in intervals)
-    retr = sum(i['sum'].get('retransmits', 0) for i in intervals)
-    print(f'{label}: sent {total_bytes / 1e6:.2f} MB in {secs:.1f}s = '
-          f'{total_bytes * 8 / secs / 1e6:.2f} Mbps, retransmits = {retr}')
+    transfer, tunit, rate, runit, retr = match.groups()
+    transfer, rate = float(transfer), float(rate)
+    if tunit == 'KBytes':
+        transfer /= 1024
+    elif tunit == 'GBytes':
+        transfer *= 1024
+    if runit == 'Kbits/sec':
+        rate /= 1000
+    elif runit == 'Gbits/sec':
+        rate *= 1000
+    retr = int(retr) if retr else 0
+    print(f'{label}: sent {transfer:.2f} MB at {rate:.2f} Mbps, retransmits = {retr}')
 
 
 def apply_htb_prio(node, iface, total_rate_mbit=10):
@@ -81,9 +87,6 @@ def apply_htb_prio(node, iface, total_rate_mbit=10):
         f"match ip tos 0xb8 0xfc flowid 1:10",
     ]
     for c in cmds:
-        # First command (qdisc del) is expected to error on a fresh interface -
-        # that specific failure is fine. All others print their output so
-        # real errors are visible instead of being silently swallowed.
         if "qdisc del" in c:
             node.cmd(c + " 2>/dev/null")
         else:
@@ -116,9 +119,6 @@ def run_dscp_experiment():
     net.start()
     net.pingAll()
 
-    # Find the switch-side interface of the h3<->s1 link. This is the port
-    # traffic from h1 and h2 actually flows OUT of on its way to h3, so this
-    # (not h3's own interface) is where egress queuing has real effect.
     link_h3 = h3.connectionsTo(s1)[0]
     switch_iface = link_h3[1].name
     info(f'*** Applying HTB+PRIO QoS on switch interface {switch_iface} (facing h3) ***\n')
@@ -128,8 +128,6 @@ def run_dscp_experiment():
     h3.cmd('pkill iperf3')
     time.sleep(1)
 
-    # A single iperf3 server handles only ONE test at a time. h1 and h2 send
-    # at the same moment, so each flow gets its own server on its own port.
     info('*** Starting two iperf3 servers on h3 (ports 5201 and 5202)\n')
     h3.cmd('iperf3 -s -p 5201 -D')   # for h1 (high-priority, EF)
     h3.cmd('iperf3 -s -p 5202 -D')   # for h2 (low-priority, BE)
@@ -137,18 +135,17 @@ def run_dscp_experiment():
 
     bytes_before = class_bytes(s1, switch_iface)
 
-    # NOTE ON TAGGING: iperf3 3.9's --dscp option did NOT produce DSCP-46
-    # packets in our VM (iptables counters at h3 showed 0 matches). Setting
-    # the TOS byte directly with -S did: DSCP 46 (EF) << 2 = 184 = 0xB8, and
-    # 990 of 1005 packets to the server were seen with DSCP 46.
-    info('\n*** HIGH-PRIORITY flow: h1 -> h3, EF (TOS 184 = DSCP 46), 5 Mbps offered ***\n')
+    h1.cmd('iptables -t mangle -F OUTPUT')
+    h1.cmd('iptables -t mangle -A OUTPUT -p tcp --dport 5201 -j DSCP --set-dscp 46')
+
+    info('\n*** HIGH-PRIORITY flow: h1 -> h3, EF (DSCP 46 via iptables), 5 Mbps offered ***\n')
     p1 = h1.popen(['iperf3', '-c', '10.0.0.3', '-p', '5201', '-t', str(TEST_SECONDS),
-                   '-b', '5M', '-S', '184', '-J'],
+                   '-b', '5M'],
                   stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
     info('*** LOW-PRIORITY flow:  h2 -> h3, BE (DSCP 0), 8 Mbps offered, same time ***\n')
     p2 = h2.popen(['iperf3', '-c', '10.0.0.3', '-p', '5202', '-t', str(TEST_SECONDS),
-                   '-b', '8M', '-J'],
+                   '-b', '8M'],
                   stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
     # Wait for the clients to actually finish (instead of a fixed sleep)
@@ -161,7 +158,7 @@ def run_dscp_experiment():
             proc.kill()
             out, err = proc.communicate()
         outputs.append((label, out, err))
-        with open('/tmp/' + ('h1_ef' if 'EF' in label else 'h2_be') + '_result.json', 'w') as f:
+        with open('/tmp/' + ('h1_ef' if 'EF' in label else 'h2_be') + '_result.txt', 'w') as f:
             f.write(out)
 
     bytes_after = class_bytes(s1, switch_iface)
@@ -183,7 +180,7 @@ def run_dscp_experiment():
     else:
         print('  -> EF class is receiving the h1 flow: DSCP classification works.')
 
-    info('\n*** Raw JSON saved in /tmp/h1_ef_result.json and /tmp/h2_be_result.json ***\n')
+    info('\n*** Raw output saved in /tmp/h1_ef_result.txt and /tmp/h2_be_result.txt ***\n')
     info('*** Dropping into CLI - type "exit" to stop the network ***\n')
     CLI(net)
 
