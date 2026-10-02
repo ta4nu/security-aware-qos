@@ -164,12 +164,11 @@ def run_trust_experiment():
 
     # --- Trust verification loop ---
     info(f'\n*** TRUST MODULE: polling every {POLL_SECONDS}s, R_exp(EF)={R_EXP_EF_MBPS} Mbps, theta={THETA} ***\n')
-    prev_counts = {ip: 0 for ip in EF_SOURCES}
+    GRACE_SECONDS = 6   # skip judgement during early TCP slow-start/ramp-up
+    CONSECUTIVE_VIOLATIONS_REQUIRED = 2  # extra safety margin on top of averaging
+
     demoted = set()
     violation_streak = {ip: 0 for ip in EF_SOURCES}
-    CONSECUTIVE_VIOLATIONS_REQUIRED = 2  # avoids a single noisy sample (e.g.
-                                          # TCP slow-start on a legit flow)
-                                          # triggering a permanent demotion
     elapsed = 0
     while elapsed < TEST_SECONDS:
         time.sleep(POLL_SECONDS)
@@ -177,16 +176,18 @@ def run_trust_experiment():
         counts = read_counts(h3, EF_SOURCES)
         print(f'\n--- t={elapsed}s ---')
         for ip, label in EF_SOURCES.items():
-            cur = counts.get(ip, prev_counts[ip])
-            delta_bytes = max(cur - prev_counts[ip], 0)
-            prev_counts[ip] = cur
-            r_obs = (delta_bytes * 8) / (POLL_SECONDS * 1e6)  # Mbps
-            trust = 1 - abs(r_obs - R_EXP_EF_MBPS) / R_EXP_EF_MBPS
+            cum_bytes = counts.get(ip, 0)
+            r_cum = (cum_bytes * 8) / (elapsed * 1e6)  # cumulative avg Mbps since start
+            trust = 1 - abs(r_cum - R_EXP_EF_MBPS) / R_EXP_EF_MBPS
+
+            if elapsed < GRACE_SECONDS:
+                print(f'{label:32s} R_avg={r_cum:6.2f} Mbps  T={trust:6.2f}  [warming up - grace period]')
+                continue
 
             if trust < THETA:
                 violation_streak[ip] += 1
             else:
-                violation_streak[ip] = 0  # a trusted poll clears the streak
+                violation_streak[ip] = 0
 
             if ip in demoted:
                 status = 'SUSPICIOUS (already demoted)' if trust < THETA else 'TRUSTED (still demoted from earlier)'
@@ -198,7 +199,7 @@ def run_trust_experiment():
                 status = f'suspicious ({violation_streak[ip]}/{CONSECUTIVE_VIOLATIONS_REQUIRED}, not yet demoted)'
             else:
                 status = 'TRUSTED'
-            print(f'{label:32s} R_obs={r_obs:6.2f} Mbps  T={trust:6.2f}  [{status}]')
+            print(f'{label:32s} R_avg={r_cum:6.2f} Mbps  T={trust:6.2f}  [{status}]')
 
     info('\n*** Waiting for flows to finish ***\n')
     outputs = []
