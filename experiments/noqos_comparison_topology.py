@@ -73,9 +73,12 @@ def run_no_qos_comparison():
     h3.cmd('iperf3 -s -p 5202 -D')
     time.sleep(1)
 
-    info('\n*** Flow 1 (tagged EF/DSCP46, but un-prioritized here): h1 -> h3, 5 Mbps offered ***\n')
+    h1.cmd('iptables -t mangle -F OUTPUT')
+    h1.cmd('iptables -t mangle -A OUTPUT -p tcp --dport 5201 -j DSCP --set-dscp 46')
+
+    info('\n*** Flow 1 (tagged EF/DSCP46 via iptables, but un-prioritized here): h1 -> h3, 5 Mbps offered ***\n')
     p1 = h1.popen(['iperf3', '-c', '10.0.0.3', '-p', '5201', '-t', str(TEST_SECONDS),
-                   '-b', '5M', '-S', '184'],
+                   '-b', '5M'],
                   stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
     info('*** Flow 2 (BE, untagged): h2 -> h3, 8 Mbps offered, same time ***\n')
