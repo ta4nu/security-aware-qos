@@ -13,7 +13,7 @@ POLL_SECONDS = 2           # how often the trust module checks behaviour
 R_EXP_EF_MBPS = 2.0        # expected rate for genuine EF (control-like) traffic
 THETA = 0.5                # trust threshold - below this, a flow is demoted
 
-EF_SOURCES = {
+EF_LABELS = {
     '10.0.0.1': 'h1 (legitimate EF)',
     '10.0.0.4': 'h4 (ATTACKER claiming EF)',
 }
@@ -86,17 +86,35 @@ def demote_source(switch_node, iface, src_ip):
         print(f"[demote] {out.strip()}")
 
 
-def read_counts(h3, ip_to_rule_index):
-    """Read exact (not abbreviated) packet/byte counts per source IP from
-    the iptables mangle PREROUTING accounting rules set up on h3."""
-    out = h3.cmd('iptables -t mangle -L PREROUTING -v -n -x')
+def read_sender_egress_bytes(ef_sources):
+    """
+    Read each EF-claiming flow's own byte count directly from its SENDER's
+    OUTPUT chain (the same rule that marks its DSCP), not from the
+    receiver's PREROUTING chain.
+
+    This matters because measuring at the receiver means measuring AFTER
+    our own tc classification has already acted on the traffic: while h1
+    and h4 both still claim EF (before any demotion), they share the same
+    priority queue and get fairly split bandwidth there - so a bulk
+    attacker can end up looking like it's sending a "plausible" rate
+    simply because our own enforcement throttled it via fair sharing, not
+    because it was behaving honestly. That makes receiver-side trust
+    checks circular: the system's own queuing can mask the very behaviour
+    trust verification is supposed to catch.
+
+    Measuring at the sender's own egress, before the shared queue ever
+    sees the traffic, avoids this: it reflects what each host is actually
+    trying to push onto the network, independent of how our own QoS logic
+    later treats it.
+    """
     counts = {}
-    for line in out.splitlines():
-        for ip in ip_to_rule_index:
-            if ip in line:
+    for ip, (label, node, port) in ef_sources.items():
+        out = node.cmd('iptables -t mangle -L OUTPUT -v -n -x')
+        for line in out.splitlines():
+            if f'dpt:{port}' in line:
                 nums = re.findall(r'\d+', line)
                 if len(nums) >= 2:
-                    counts[ip] = int(nums[1])  # bytes column
+                    counts[ip] = int(nums[1])
     return counts
 
 
@@ -137,10 +155,10 @@ def run_trust_experiment():
     h4.cmd('iptables -t mangle -A OUTPUT -p tcp --dport 5203 -j DSCP --set-dscp 46')
     # h2 sends no DSCP mark at all -> arrives as BE (DSCP 0) by default
 
-    # Counting rules at h3 to observe each EF-claiming source's actual byte rate
-    h3.cmd('iptables -t mangle -F PREROUTING')
-    for ip in EF_SOURCES:
-        h3.cmd(f'iptables -t mangle -A PREROUTING -s {ip} -m dscp --dscp 46')
+    EF_SOURCES = {
+        '10.0.0.1': (EF_LABELS['10.0.0.1'], h1, 5201),
+        '10.0.0.4': (EF_LABELS['10.0.0.4'], h4, 5203),
+    }
 
     h3.cmd('pkill iperf3')
     time.sleep(1)
@@ -164,6 +182,7 @@ def run_trust_experiment():
 
     # --- Trust verification loop ---
     info(f'\n*** TRUST MODULE: polling every {POLL_SECONDS}s, R_exp(EF)={R_EXP_EF_MBPS} Mbps, theta={THETA} ***\n')
+
     GRACE_SECONDS = 6   # skip judgement during early TCP slow-start/ramp-up
     CONSECUTIVE_VIOLATIONS_REQUIRED = 2  # extra safety margin on top of averaging
 
@@ -173,9 +192,9 @@ def run_trust_experiment():
     while elapsed < TEST_SECONDS:
         time.sleep(POLL_SECONDS)
         elapsed += POLL_SECONDS
-        counts = read_counts(h3, EF_SOURCES)
+        counts = read_sender_egress_bytes(EF_SOURCES)
         print(f'\n--- t={elapsed}s ---')
-        for ip, label in EF_SOURCES.items():
+        for ip, (label, _node, _port) in EF_SOURCES.items():
             cum_bytes = counts.get(ip, 0)
             r_cum = (cum_bytes * 8) / (elapsed * 1e6)  # cumulative avg Mbps since start
             trust = 1 - abs(r_cum - R_EXP_EF_MBPS) / R_EXP_EF_MBPS
