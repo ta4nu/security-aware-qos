@@ -1,73 +1,73 @@
 
 --- t=2s ---
-h1 (legitimate EF)               R_avg=  0.00 Mbps  T=  0.00  [warming up - grace period]
-h4 (ATTACKER claiming EF)        R_avg=  0.18 Mbps  T=  0.09  [warming up - grace period]
+h1 (legitimate EF)               R_avg=  0.06 Mbps  T=  0.03  [warming up - grace period]
+h4 (ATTACKER claiming EF)        R_avg=  0.19 Mbps  T=  0.10  [warming up - grace period]
 
 --- t=4s ---
-h1 (legitimate EF)               R_avg=  0.90 Mbps  T=  0.45  [warming up - grace period]
-h4 (ATTACKER claiming EF)        R_avg=  2.90 Mbps  T=  0.55  [warming up - grace period]
+h1 (legitimate EF)               R_avg=  0.86 Mbps  T=  0.43  [warming up - grace period]
+h4 (ATTACKER claiming EF)        R_avg=  2.94 Mbps  T=  0.53  [warming up - grace period]
 
 --- t=6s ---
-h1 (legitimate EF)               R_avg=  1.11 Mbps  T=  0.56  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  3.74 Mbps  T=  0.13  [suspicious (1/2, not yet demoted)]
+h1 (legitimate EF)               R_avg=  1.13 Mbps  T=  0.56  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  3.76 Mbps  T=  0.12  [suspicious (1/2, not yet demoted)]
 
 --- t=8s ---
-h1 (legitimate EF)               R_avg=  1.24 Mbps  T=  0.62  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.14 Mbps  T= -0.07  [SUSPICIOUS x2 -> DEMOTED NOW]
+h1 (legitimate EF)               R_avg=  1.19 Mbps  T=  0.60  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  4.13 Mbps  T= -0.07  [SUSPICIOUS x2 -> DEMOTED NOW]
 
 --- t=10s ---
 h1 (legitimate EF)               R_avg=  1.28 Mbps  T=  0.64  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.40 Mbps  T= -0.20  [SUSPICIOUS (already demoted)]
+h4 (ATTACKER claiming EF)        R_avg=  4.37 Mbps  T= -0.18  [SUSPICIOUS (already demoted)]
 
 --- t=12s ---
 h1 (legitimate EF)               R_avg=  1.33 Mbps  T=  0.67  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.57 Mbps  T= -0.28  [SUSPICIOUS (already demoted)]
+h4 (ATTACKER claiming EF)        R_avg=  4.53 Mbps  T= -0.26  [SUSPICIOUS (already demoted)]
 
 --- t=14s ---
-h1 (legitimate EF)               R_avg=  1.37 Mbps  T=  0.69  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.63 Mbps  T= -0.31  [SUSPICIOUS (already demoted)]
+h1 (legitimate EF)               R_avg=  1.37 Mbps  T=  0.68  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  4.64 Mbps  T= -0.32  [SUSPICIOUS (already demoted)]
 
 --- t=16s ---
 h1 (legitimate EF)               R_avg=  1.40 Mbps  T=  0.70  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.72 Mbps  T= -0.36  [SUSPICIOUS (already demoted)]
+h4 (ATTACKER claiming EF)        R_avg=  4.73 Mbps  T= -0.36  [SUSPICIOUS (already demoted)]
 
 --- t=18s ---
 h1 (legitimate EF)               R_avg=  1.42 Mbps  T=  0.71  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.79 Mbps  T= -0.39  [SUSPICIOUS (already demoted)]
+h4 (ATTACKER claiming EF)        R_avg=  4.82 Mbps  T= -0.41  [SUSPICIOUS (already demoted)]
 
 --- t=20s ---
-h1 (legitimate EF)               R_avg=  1.44 Mbps  T=  0.72  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.85 Mbps  T= -0.42  [SUSPICIOUS (already demoted)]
+h1 (legitimate EF)               R_avg=  1.43 Mbps  T=  0.71  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  4.87 Mbps  T= -0.44  [SUSPICIOUS (already demoted)]
 
 --- t=22s ---
-h1 (legitimate EF)               R_avg=  1.45 Mbps  T=  0.72  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.90 Mbps  T= -0.45  [SUSPICIOUS (already demoted)]
+h1 (legitimate EF)               R_avg=  1.44 Mbps  T=  0.72  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  4.89 Mbps  T= -0.44  [SUSPICIOUS (already demoted)]
 
 --- t=24s ---
-h1 (legitimate EF)               R_avg=  1.44 Mbps  T=  0.72  [TRUSTED]
-h4 (ATTACKER claiming EF)        R_avg=  4.95 Mbps  T= -0.47  [SUSPICIOUS (already demoted)]
+h1 (legitimate EF)               R_avg=  1.32 Mbps  T=  0.66  [TRUSTED]
+h4 (ATTACKER claiming EF)        R_avg=  4.48 Mbps  T= -0.24  [SUSPICIOUS (already demoted)]
 class htb 1:10 parent 1:1 leaf 10: prio 0 rate 7Mbit ceil 10Mbit burst 1598b cburst 1600b 
- Sent 20973270 bytes 13895 pkt (dropped 35, overlimits 6399 requeues 0) 
- backlog 90610b 39p requeues 0
- lended: 7536 borrowed: 8 giants: 0
- tokens: -49792 ctokens: -17850
+ Sent 17769421 bytes 11778 pkt (dropped 25, overlimits 5457 requeues 0) 
+ backlog 0b 0p requeues 0
+ lended: 6339 borrowed: 3 giants: 0
+ tokens: 1246 ctokens: 17531
 
 class htb 1:1 root rate 10Mbit ceil 10Mbit burst 1600b cburst 1600b 
- Sent 29971208 bytes 19875 pkt (dropped 0, overlimits 13 requeues 0) 
+ Sent 25425804 bytes 16880 pkt (dropped 0, overlimits 18 requeues 0) 
  backlog 0b 0p requeues 0
- lended: 10 borrowed: 0 giants: 0
- tokens: -66465 ctokens: -66465
+ lended: 20 borrowed: 0 giants: 0
+ tokens: 1287 ctokens: 1287
 
 class htb 1:20 parent 1:1 leaf 20: prio 1 rate 3Mbit ceil 10Mbit burst 1599b cburst 1600b 
- Sent 8997938 bytes 5980 pkt (dropped 17, overlimits 2463 requeues 0) 
- backlog 73324b 36p requeues 0
- lended: 3517 borrowed: 2 giants: 0
- tokens: -122740 ctokens: -28577
+ Sent 7656383 bytes 5102 pkt (dropped 12, overlimits 2132 requeues 0) 
+ backlog 0b 0p requeues 0
+ lended: 2958 borrowed: 17 giants: 0
+ tokens: -55363 ctokens: 7543
 
 
-h1 (legit EF): sent 4.34 MB at 0.50 Mbps, retransmits = 28
-h2 (BE): could not find a sender summary line. stderr: iperf3: error - unable to write to stream socket: Broken pipe
-h4 (attacker): sent 15.20 MB at 5.32 Mbps, retransmits = 32
+h1 (legitimate EF): sent 3.96 MB at 1.32 Mbps avg over 24s  [measured via trust module egress counters]
+h4 (ATTACKER claiming EF): sent 13.43 MB at 4.48 Mbps avg over 24s (demoted during test)  [measured via trust module egress counters]
+h2 (BE): sent 7.56 MB at 0.90 Mbps, retransmits = 24
 
 Flows demoted by the trust module during this run: ['10.0.0.4']
 mininet> 
