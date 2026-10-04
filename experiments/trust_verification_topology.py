@@ -153,7 +153,6 @@ def run_trust_experiment():
     h1.cmd('iptables -t mangle -A OUTPUT -p tcp --dport 5201 -j DSCP --set-dscp 46')
     h4.cmd('iptables -t mangle -F OUTPUT')
     h4.cmd('iptables -t mangle -A OUTPUT -p tcp --dport 5203 -j DSCP --set-dscp 46')
-    # h2 sends no DSCP mark at all -> arrives as BE (DSCP 0) by default
 
     EF_SOURCES = {
         '10.0.0.1': (EF_LABELS['10.0.0.1'], h1, 5201),
@@ -234,8 +233,21 @@ def run_trust_experiment():
     print(s1.cmd(f'tc -s class show dev {switch_iface}'))
 
     info('\n*** RESULTS SUMMARY ***\n')
+
+    final_counts = read_sender_egress_bytes(EF_SOURCES)
+    for ip, (label, _node, _port) in EF_SOURCES.items():
+        total_bytes = final_counts.get(ip, 0)
+        total_mb = total_bytes / 1e6
+        avg_mbps = (total_bytes * 8) / (TEST_SECONDS * 1e6)
+        demote_note = ' (demoted during test)' if ip in demoted else ''
+        print(f'{label}: sent {total_mb:.2f} MB at {avg_mbps:.2f} Mbps avg over {TEST_SECONDS}s'
+              f'{demote_note}  [measured via trust module egress counters]')
+
+    # h2 (BE, not claiming priority) has no egress counter set up, since it
+    # isn't subject to trust verification - fall back to its iperf3 output.
     for label, out, err in outputs:
-        summarize_iperf(label, out, err)
+        if label.startswith('h2'):
+            summarize_iperf(label, out, err)
 
     print(f'\nFlows demoted by the trust module during this run: {list(demoted) or "none"}')
 
