@@ -1,0 +1,18 @@
+  [t=8s] h4 (attacker): DEMOTED (R_avg=4.11 Mbps, T=-0.05)
+
+==============================================================================
+WEEK 8 - THREE-WAY COMPARISON SUMMARY
+==============================================================================
+Scenario        h1 EF (Mbps)    h4 attacker (Mbps)  h2 BE (Mbps)  h4 demoted? 
+------------------------------------------------------------------------------
+No QoS          1.26            4.19                n/a           False       
+Static DSCP     1.55            5.29                n/a           False       
+Trust-Verified  1.55            5.34                3.08          True        
+==============================================================================
+
+Interpretation:
+- No QoS: h1 and h4 compete on raw TCP fairness alone; no priority is honored.
+- Static DSCP: h4 is a spoofed EF flow, so it unfairly shares the protected
+  priority queue with h1 - the vulnerability this project addresses.
+- Trust-Verified: h4 is detected and demoted, restoring h1's intended
+  protection without trusting h4's claimed priority blindly.
