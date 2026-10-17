@@ -1,18 +1,22 @@
-  [t=8s] h4 (attacker): DEMOTED (R_avg=4.11 Mbps, T=-0.05)
+  [t=8s] h1 (legit EF): DEMOTED (R_avg=0.10 Mbps, T=0.05)
+  [t=8s] h4 (attacker): DEMOTED (R_avg=0.18 Mbps, T=0.09)
 
-==============================================================================
-WEEK 8 - THREE-WAY COMPARISON SUMMARY
-==============================================================================
-Scenario        h1 EF (Mbps)    h4 attacker (Mbps)  h2 BE (Mbps)  h4 demoted? 
-------------------------------------------------------------------------------
-No QoS          1.26            4.19                n/a           False       
-Static DSCP     1.55            5.29                n/a           False       
-Trust-Verified  1.55            5.34                3.08          True        
-==============================================================================
+====================================================================================================
+WEEK 8 - THREE-WAY COMPARISON SUMMARY (all values in Mbps, averaged over the test)
+====================================================================================================
+OFFERED = sent from the host's own interface | DELIVERED = arrived at h3
+----------------------------------------------------------------------------------------------------
+Scenario        h1 offered  h1 deliv.   h4 offered  h4 deliv.   h2 deliv.   h4 demoted?   
+----------------------------------------------------------------------------------------------------
+No QoS          1.29        1.18        4.45        3.74        4.66        No            
+Static DSCP     1.29        1.29        5.25        5.24        2.86        No            
+Trust-Verified  0.03        0.03        0.06        0.06        0.03        Yes (t=8s)    
+====================================================================================================
 
-Interpretation:
-- No QoS: h1 and h4 compete on raw TCP fairness alone; no priority is honored.
-- Static DSCP: h4 is a spoofed EF flow, so it unfairly shares the protected
-  priority queue with h1 - the vulnerability this project addresses.
-- Trust-Verified: h4 is detected and demoted, restoring h1's intended
-  protection without trusting h4's claimed priority blindly.
+How to read this:
+- OFFERED is what each host tried to send; it is what the trust module judges,
+  so it is deliberately not changed by downstream queuing.
+- DELIVERED shows the effect of the queuing/enforcement on what actually got through.
+- h1 delivered: whether the legitimate EF flow got what it sent.
+- h2 delivered: whether honest best-effort traffic was squeezed by the spoofed flow.
+- h4 demoted?: only the trust-verified run can detect the spoofed priority claim.
