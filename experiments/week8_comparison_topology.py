@@ -16,34 +16,6 @@ THETA = 0.5
 GRACE_SECONDS = 6
 CONSECUTIVE_VIOLATIONS_REQUIRED = 2
 
-_SENDER_RE = re.compile(
-    r'([\d.]+)\s+(KBytes|MBytes|GBytes)\s+([\d.]+)\s+(Kbits/sec|Mbits/sec|Gbits/sec)'
-    r'(?:\s+(\d+))?\s+sender'
-)
-
-
-def summarize_iperf_text(out):
-    """Return (transfer_MB, rate_Mbps, retransmits) parsed from iperf3 plain text, or None."""
-    match = None
-    for line in out.splitlines():
-        m = _SENDER_RE.search(line)
-        if m:
-            match = m
-    if not match:
-        return None
-    transfer, tunit, rate, runit, retr = match.groups()
-    transfer, rate = float(transfer), float(rate)
-    if tunit == 'KBytes':
-        transfer /= 1024
-    elif tunit == 'GBytes':
-        transfer *= 1024
-    if runit == 'Kbits/sec':
-        rate /= 1000
-    elif runit == 'Gbits/sec':
-        rate *= 1000
-    return transfer, rate, (int(retr) if retr else 0)
-
-
 def apply_htb_prio(node, iface, total_rate_mbit=10):
     cmds = [
         f"tc qdisc del dev {iface} root",
@@ -80,6 +52,28 @@ def read_sender_egress_bytes(ef_sources):
                 if len(nums) >= 2:
                     counts[ip] = int(nums[1])
     return counts
+
+
+def read_delivered_bytes(h3, ports):
+    """
+    Read how many bytes of each flow actually ARRIVED at h3, from counting
+    rules on h3's PREROUTING chain (one per destination port).
+
+    This is deliberately used only for the final comparison table. The live
+    trust decisions keep using sender-side (egress) counters, because judging
+    honesty from traffic already shaped by our own queue would be circular.
+    Delivered bytes answer a different question: what did each flow actually
+    get through the network once the queuing/enforcement had acted on it?
+    """
+    out = h3.cmd('iptables -t mangle -L PREROUTING -v -n -x')
+    delivered = {}
+    for port in ports:
+        for line in out.splitlines():
+            if f'dpt:{port}' in line:
+                nums = re.findall(r'\d+', line)
+                if len(nums) >= 2:
+                    delivered[port] = int(nums[1])
+    return delivered
 
 
 def run_scenario(qos_mode):
@@ -120,6 +114,12 @@ def run_scenario(qos_mode):
         '10.0.0.4': ('h4 (attacker)', h4, 5203),
     }
 
+    # Counting-only rules at the receiver: bytes of each flow that actually
+    # arrive at h3 (used for the final delivered-throughput comparison)
+    h3.cmd('iptables -t mangle -F PREROUTING')
+    for port in (5201, 5202, 5203):
+        h3.cmd(f'iptables -t mangle -A PREROUTING -p tcp --dport {port}')
+
     h3.cmd('pkill iperf3')
     time.sleep(1)
     h3.cmd('iperf3 -s -p 5201 -D')
@@ -135,6 +135,7 @@ def run_scenario(qos_mode):
                   stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
     demoted = set()
+    demote_time = {}
     if qos_mode == 'trust':
         info(f'*** TRUST MODULE active: polling every {POLL_SECONDS}s ***\n')
         violation_streak = {ip: 0 for ip in EF_SOURCES}
@@ -155,6 +156,7 @@ def run_scenario(qos_mode):
                 if ip not in demoted and violation_streak[ip] >= CONSECUTIVE_VIOLATIONS_REQUIRED:
                     demote_source(s1, switch_iface, ip)
                     demoted.add(ip)
+                    demote_time[ip] = elapsed
                     print(f'  [t={elapsed}s] {label}: DEMOTED (R_avg={r_cum:.2f} Mbps, T={trust:.2f})')
     else:
         # No active monitoring in the 'none' and 'static' scenarios -
@@ -170,26 +172,28 @@ def run_scenario(qos_mode):
             out, err = proc.communicate()
         outputs[key] = (out, err)
 
-    final_counts = read_sender_egress_bytes(EF_SOURCES)
-    h1_mb = final_counts.get('10.0.0.1', 0) / 1e6
-    h1_mbps = (final_counts.get('10.0.0.1', 0) * 8) / (TEST_SECONDS * 1e6)
-    h4_mb = final_counts.get('10.0.0.4', 0) / 1e6
-    h4_mbps = (final_counts.get('10.0.0.4', 0) * 8) / (TEST_SECONDS * 1e6)
+    def to_mbps(nbytes):
+        return (nbytes * 8) / (TEST_SECONDS * 1e6)
 
-    h2_parsed = summarize_iperf_text(outputs['h2'][0])
-    h2_mbps = h2_parsed[1] if h2_parsed else None
+    # OFFERED: what h1/h4 pushed out of their own interfaces (sender side)
+    sent = read_sender_egress_bytes(EF_SOURCES)
+    # DELIVERED: what actually arrived at h3 for each flow (receiver side)
+    got = read_delivered_bytes(h3, (5201, 5202, 5203))
 
     result = {
         'scenario': qos_mode,
-        'h1_mb': h1_mb, 'h1_mbps': h1_mbps,
-        'h4_mb': h4_mb, 'h4_mbps': h4_mbps,
-        'h2_mbps': h2_mbps,
+        'h1_offered': to_mbps(sent.get('10.0.0.1', 0)),
+        'h4_offered': to_mbps(sent.get('10.0.0.4', 0)),
+        'h1_delivered': to_mbps(got.get(5201, 0)),
+        'h2_delivered': to_mbps(got.get(5202, 0)),
+        'h4_delivered': to_mbps(got.get(5203, 0)),
         'h4_demoted': '10.0.0.4' in demoted,
+        'h4_demote_time': demote_time.get('10.0.0.4'),
     }
 
-    info(f"\n*** {qos_mode.upper()} result: h1={h1_mbps:.2f} Mbps, "
-         f"h4={h4_mbps:.2f} Mbps, h2={h2_mbps if h2_mbps else 'n/a'} Mbps, "
-         f"h4_demoted={result['h4_demoted']} ***\n")
+    info(f"\n*** {qos_mode.upper()} result (delivered Mbps): "
+         f"h1={result['h1_delivered']:.2f}, h2={result['h2_delivered']:.2f}, "
+         f"h4={result['h4_delivered']:.2f}; h4_demoted={result['h4_demoted']} ***\n")
 
     h3.cmd('pkill iperf3')
     net.stop()
@@ -204,23 +208,31 @@ def main():
     for mode in ('none', 'static', 'trust'):
         results.append(run_scenario(mode))
 
-    print('\n' + '=' * 78)
-    print('WEEK 8 - THREE-WAY COMPARISON SUMMARY')
-    print('=' * 78)
-    header = f"{'Scenario':<16}{'h1 EF (Mbps)':<16}{'h4 attacker (Mbps)':<20}{'h2 BE (Mbps)':<14}{'h4 demoted?':<12}"
-    print(header)
-    print('-' * 78)
     label_map = {'none': 'No QoS', 'static': 'Static DSCP', 'trust': 'Trust-Verified'}
+    width = 100
+    print('\n' + '=' * width)
+    print('WEEK 8 - THREE-WAY COMPARISON SUMMARY (all values in Mbps, averaged over the test)')
+    print('=' * width)
+    print('OFFERED = sent from the host\'s own interface | DELIVERED = arrived at h3')
+    print('-' * width)
+    print(f"{'Scenario':<16}{'h1 offered':<12}{'h1 deliv.':<12}{'h4 offered':<12}"
+          f"{'h4 deliv.':<12}{'h2 deliv.':<12}{'h4 demoted?':<14}")
+    print('-' * width)
     for r in results:
-        h2_str = f"{r['h2_mbps']:.2f}" if r['h2_mbps'] is not None else 'n/a'
-        print(f"{label_map[r['scenario']]:<16}{r['h1_mbps']:<16.2f}{r['h4_mbps']:<20.2f}{h2_str:<14}{str(r['h4_demoted']):<12}")
-    print('=' * 78)
-    print('\nInterpretation:')
-    print('- No QoS: h1 and h4 compete on raw TCP fairness alone; no priority is honored.')
-    print('- Static DSCP: h4 is a spoofed EF flow, so it unfairly shares the protected')
-    print('  priority queue with h1 - the vulnerability this project addresses.')
-    print('- Trust-Verified: h4 is detected and demoted, restoring h1\'s intended')
-    print('  protection without trusting h4\'s claimed priority blindly.')
+        if r['h4_demoted']:
+            demoted_str = f"Yes (t={r['h4_demote_time']}s)"
+        else:
+            demoted_str = 'No'
+        print(f"{label_map[r['scenario']]:<16}{r['h1_offered']:<12.2f}{r['h1_delivered']:<12.2f}"
+              f"{r['h4_offered']:<12.2f}{r['h4_delivered']:<12.2f}{r['h2_delivered']:<12.2f}{demoted_str:<14}")
+    print('=' * width)
+    print('\nHow to read this:')
+    print('- OFFERED is what each host tried to send; it is what the trust module judges,')
+    print('  so it is deliberately not changed by downstream queuing.')
+    print('- DELIVERED shows the effect of the queuing/enforcement on what actually got through.')
+    print('- h1 delivered: whether the legitimate EF flow got what it sent.')
+    print('- h2 delivered: whether honest best-effort traffic was squeezed by the spoofed flow.')
+    print('- h4 demoted?: only the trust-verified run can detect the spoofed priority claim.')
 
 
 if __name__ == '__main__':
