@@ -6,6 +6,7 @@ from mininet.log import setLogLevel, info
 import time
 import re
 import os
+import sys
 import subprocess
 from subprocess import PIPE
 
@@ -207,6 +208,9 @@ def run_scenario(qos_mode):
         'h4_delivered': to_mbps(got.get(5203, 0)),
         'h4_demoted': '10.0.0.4' in demoted,
         'h4_demote_time': demote_time.get('10.0.0.4'),
+        # short diagnostic per client, shown only if a flow turns out to have stalled
+        'diag': {k: (e.strip()[:160], ' | '.join(o.strip().splitlines()[-2:])[:200])
+                 for k, (o, e) in outputs.items()},
     }
 
     info(f"\n*** {qos_mode.upper()} result (delivered Mbps): "
@@ -226,20 +230,33 @@ def run_scenario(qos_mode):
 # QoS mechanism, so it is detected, discarded and retried instead of being
 # reported as a result.
 MIN_TOTAL_DELIVERED_MBPS = 5.0
+# A flow that delivered less than this over the whole test never really got
+# going (stalled connection). Every flow in every healthy run so far delivered
+# at least 0.57 Mbps; stalled flows delivered 0.01-0.12 Mbps. Honest best-effort
+# traffic that is merely squeezed still delivered ~2 Mbps or more.
+MIN_FLOW_DELIVERED_MBPS = 0.3
 MAX_ATTEMPTS = 3
 
 
 def run_valid_scenario(mode):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         r = run_scenario(mode)
-        total = r['h1_delivered'] + r['h2_delivered'] + r['h4_delivered']
+        flows = {'h1': r['h1_delivered'], 'h2': r['h2_delivered'], 'h4': r['h4_delivered']}
+        total = sum(flows.values())
+        stalled = [k for k, v in flows.items() if v < MIN_FLOW_DELIVERED_MBPS]
         r['attempts'] = attempt
-        if total >= MIN_TOTAL_DELIVERED_MBPS:
+        if total >= MIN_TOTAL_DELIVERED_MBPS and not stalled:
             r['valid'] = True
             return r
-        print(f'*** INVALID RUN ({mode}, attempt {attempt}/{MAX_ATTEMPTS}): total delivered '
-              f'{total:.2f} Mbps - the network collapsed, so this says nothing about the '
-              f'QoS mechanism. Discarding and retrying. ***')
+        if total < MIN_TOTAL_DELIVERED_MBPS:
+            why = f'the whole network collapsed (total delivered {total:.2f} Mbps)'
+        else:
+            why = f'flow(s) {", ".join(stalled)} never got going'
+        print(f'*** INVALID RUN ({mode}, attempt {attempt}/{MAX_ATTEMPTS}): {why}. '
+              f'This says nothing about the QoS mechanism. Discarding and retrying. ***')
+        for k in (stalled or list(flows)):
+            err, tail = r['diag'][k]
+            print(f'    [{k} iperf3] stderr: {err or "(none)"} | last output: {tail or "(none)"}')
         time.sleep(5)
     r['valid'] = False
     return r
@@ -296,7 +313,14 @@ def save_results(lines):
 
 def main():
     setLogLevel('info')
-    results = [run_valid_scenario(mode) for mode in ('none', 'static', 'trust')]
+    canonical = ['none', 'static', 'trust']
+    # Optional: python3 week8_comparison_topology.py trust,static,none
+    order = sys.argv[1].split(',') if len(sys.argv) > 1 else canonical
+    assert sorted(order) == sorted(canonical), f'order must be a permutation of {canonical}'
+    ran = {mode: run_valid_scenario(mode) for mode in order}
+    results = [ran[m] for m in canonical]          # table always in the same order
+    if order != canonical:
+        print(f'(scenarios were run in the order: {", ".join(order)})')
 
     lines = build_summary(results)
     print('\n' + '\n'.join(lines))
