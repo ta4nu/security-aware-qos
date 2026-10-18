@@ -25,7 +25,7 @@ def apply_htb_prio(node, iface, total_rate_mbit=10):
         f"tc class add dev {iface} parent 1:1 classid 1:20 htb rate {int(total_rate_mbit*0.3)}mbit ceil {total_rate_mbit}mbit prio 1",
         f"tc qdisc add dev {iface} parent 1:10 handle 10: pfifo limit 50",
         f"tc qdisc add dev {iface} parent 1:20 handle 20: pfifo limit 50",
-        f"tc filter add dev {iface} protocol ip parent 1:0 prio 1 u32 "
+        f"tc filter add dev {iface} protocol ip parent 1:0 prio 2 u32 "
         f"match ip tos 0xb8 0xfc flowid 1:10",
     ]
     for c in cmds:
@@ -37,9 +37,19 @@ def apply_htb_prio(node, iface, total_rate_mbit=10):
 
 def demote_source(switch_node, iface, src_ip):
     switch_node.cmd(
-        f"tc filter add dev {iface} protocol ip parent 1:0 prio 0 u32 "
+        f"tc filter add dev {iface} protocol ip parent 1:0 prio 1 u32 "
         f"match ip src {src_ip} flowid 1:20"
     )
+
+
+def demotion_is_active(switch_node, iface):
+    """
+    Check that the demotion filter really sits AHEAD of the DSCP filter.
+    tc checks filters in ascending 'pref' order and the first match wins, so
+    the override must have a lower pref than the DSCP filter (pref 2).
+    """
+    out = switch_node.cmd(f"tc filter show dev {iface}")
+    return any(' pref 1 ' in line and 'flowid 1:20' in line for line in out.splitlines())
 
 
 def read_sender_egress_bytes(ef_sources):
@@ -163,7 +173,9 @@ def run_scenario(qos_mode):
                     demote_source(s1, switch_iface, ip)
                     demoted.add(ip)
                     demote_time[ip] = elapsed
-                    print(f'  [t={elapsed}s] {label}: DEMOTED (R_avg={r_cum:.2f} Mbps, T={trust:.2f})')
+                    ok = demotion_is_active(s1, switch_iface)
+                    print(f'  [t={elapsed}s] {label}: DEMOTED (R_avg={r_cum:.2f} Mbps, T={trust:.2f}) '
+                          f'[demotion filter active: {ok}]')
     else:
         # No active monitoring in the 'none' and 'static' scenarios -
         # this is exactly the vulnerability being demonstrated.
