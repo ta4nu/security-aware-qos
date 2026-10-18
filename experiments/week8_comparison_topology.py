@@ -80,6 +80,12 @@ def run_scenario(qos_mode):
     """qos_mode: 'none', 'static', or 'trust'. Returns a results dict."""
     info(f'\n{"="*70}\n*** SCENARIO: {qos_mode.upper()} ***\n{"="*70}\n')
 
+    # Start every scenario from a clean slate: stray iperf3 processes or
+    # leftover network state from the previous scenario have produced
+    # collapsed, unusable runs before.
+    os.system('pkill iperf3 > /dev/null 2>&1; mn -c > /dev/null 2>&1')
+    time.sleep(3)
+
     net = Mininet(switch=OVSKernelSwitch, link=TCLink, autoSetMacs=True)
     net.addController('c0', controller=Controller)
     h1 = net.addHost('h1', ip='10.0.0.1/24')
@@ -202,37 +208,88 @@ def run_scenario(qos_mode):
     return result
 
 
-def main():
-    setLogLevel('info')
-    results = []
-    for mode in ('none', 'static', 'trust'):
-        results.append(run_scenario(mode))
+# A healthy run moves most of the ~10 Mbps link's capacity (earlier valid
+# runs delivered about 9.4-9.6 Mbps in total across the three flows). A run
+# where the network collapses (all flows near zero) says nothing about the
+# QoS mechanism, so it is detected, discarded and retried instead of being
+# reported as a result.
+MIN_TOTAL_DELIVERED_MBPS = 5.0
+MAX_ATTEMPTS = 3
 
+
+def run_valid_scenario(mode):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        r = run_scenario(mode)
+        total = r['h1_delivered'] + r['h2_delivered'] + r['h4_delivered']
+        r['attempts'] = attempt
+        if total >= MIN_TOTAL_DELIVERED_MBPS:
+            r['valid'] = True
+            return r
+        print(f'*** INVALID RUN ({mode}, attempt {attempt}/{MAX_ATTEMPTS}): total delivered '
+              f'{total:.2f} Mbps - the network collapsed, so this says nothing about the '
+              f'QoS mechanism. Discarding and retrying. ***')
+        time.sleep(5)
+    r['valid'] = False
+    return r
+
+
+def build_summary(results):
     label_map = {'none': 'No QoS', 'static': 'Static DSCP', 'trust': 'Trust-Verified'}
     width = 100
-    print('\n' + '=' * width)
-    print('WEEK 8 - THREE-WAY COMPARISON SUMMARY (all values in Mbps, averaged over the test)')
-    print('=' * width)
-    print('OFFERED = sent from the host\'s own interface | DELIVERED = arrived at h3')
-    print('-' * width)
-    print(f"{'Scenario':<16}{'h1 offered':<12}{'h1 deliv.':<12}{'h4 offered':<12}"
-          f"{'h4 deliv.':<12}{'h2 deliv.':<12}{'h4 demoted?':<14}")
-    print('-' * width)
+    lines = []
+    lines.append('=' * width)
+    lines.append('WEEK 8 - THREE-WAY COMPARISON SUMMARY (all values in Mbps, averaged over the test)')
+    lines.append('=' * width)
+    lines.append("OFFERED = sent from the host's own interface | DELIVERED = arrived at h3")
+    lines.append('-' * width)
+    lines.append(f"{'Scenario':<16}{'h1 offered':<12}{'h1 deliv.':<12}{'h4 offered':<12}"
+                 f"{'h4 deliv.':<12}{'h2 deliv.':<12}{'h4 demoted?':<14}{'note':<10}")
+    lines.append('-' * width)
     for r in results:
-        if r['h4_demoted']:
-            demoted_str = f"Yes (t={r['h4_demote_time']}s)"
-        else:
-            demoted_str = 'No'
-        print(f"{label_map[r['scenario']]:<16}{r['h1_offered']:<12.2f}{r['h1_delivered']:<12.2f}"
-              f"{r['h4_offered']:<12.2f}{r['h4_delivered']:<12.2f}{r['h2_delivered']:<12.2f}{demoted_str:<14}")
-    print('=' * width)
-    print('\nHow to read this:')
-    print('- OFFERED is what each host tried to send; it is what the trust module judges,')
-    print('  so it is deliberately not changed by downstream queuing.')
-    print('- DELIVERED shows the effect of the queuing/enforcement on what actually got through.')
-    print('- h1 delivered: whether the legitimate EF flow got what it sent.')
-    print('- h2 delivered: whether honest best-effort traffic was squeezed by the spoofed flow.')
-    print('- h4 demoted?: only the trust-verified run can detect the spoofed priority claim.')
+        demoted_str = f"Yes (t={r['h4_demote_time']}s)" if r['h4_demoted'] else 'No'
+        note = '' if r['valid'] else 'INVALID'
+        if r['valid'] and r['attempts'] > 1:
+            note = f"retry x{r['attempts'] - 1}"
+        lines.append(f"{label_map[r['scenario']]:<16}{r['h1_offered']:<12.2f}{r['h1_delivered']:<12.2f}"
+                     f"{r['h4_offered']:<12.2f}{r['h4_delivered']:<12.2f}{r['h2_delivered']:<12.2f}"
+                     f"{demoted_str:<14}{note:<10}")
+    lines.append('=' * width)
+    lines.append('')
+    lines.append('How to read this:')
+    lines.append('- OFFERED is what each host tried to send; it is what the trust module judges,')
+    lines.append('  so it is deliberately not changed by downstream queuing.')
+    lines.append('- DELIVERED shows the effect of the queuing/enforcement on what actually got through.')
+    lines.append('- h1 delivered: whether the legitimate EF flow got what it sent.')
+    lines.append('- h2 delivered: whether honest best-effort traffic was squeezed by the spoofed flow.')
+    lines.append('- h4 demoted?: only the trust-verified run can detect the spoofed priority claim.')
+    lines.append('- A row marked INVALID never produced a healthy network run; do not use its numbers.')
+    return lines
+
+
+def save_results(lines):
+    """Write the summary to a file from inside the script, so it does not
+    depend on shell redirection (Mininet's progress messages go to stderr and
+    are not captured by a plain > or | tee)."""
+    out_dir = 'results' if os.path.isdir('results') else '.'
+    path = os.path.join(out_dir, 'week8_comparison_results.txt')
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    # The script runs under sudo; hand the file back to the real user so
+    # git add / editing works without sudo.
+    uid, gid = os.environ.get('SUDO_UID'), os.environ.get('SUDO_GID')
+    if uid and gid:
+        os.chown(path, int(uid), int(gid))
+    return path
+
+
+def main():
+    setLogLevel('info')
+    results = [run_valid_scenario(mode) for mode in ('none', 'static', 'trust')]
+
+    lines = build_summary(results)
+    print('\n' + '\n'.join(lines))
+    path = save_results(lines)
+    print(f'\nSummary saved to: {os.path.abspath(path)}')
 
 
 if __name__ == '__main__':
