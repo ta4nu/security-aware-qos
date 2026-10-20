@@ -1,7 +1,16 @@
+  [t=8s] h1 (legit EF): DEMOTED (R_avg=0.05 Mbps, T=0.02) [demotion filter active: True]
+  [t=8s] h4 (attacker): DEMOTED (R_avg=0.02 Mbps, T=0.01) [demotion filter active: True]
+*** INVALID RUN (trust, attempt 1/3): the whole network collapsed (total delivered 0.03 Mbps). This says nothing about the QoS mechanism. Discarding and retrying. ***
+    [h1 iperf3] stderr: iperf3: error - control socket has closed unexpectedly | last output: [  7]   0.00-81.86  sec  99.0 KBytes  9.91 Kbits/sec    0             sender | [  7]   0.00-81.86  sec  0.00 Bytes  0.00 bits/sec                  receiver
+    [h2 iperf3] stderr: iperf3: error - control socket has closed unexpectedly | last output: [  7]   0.00-81.87  sec  99.0 KBytes  9.90 Kbits/sec    0             sender | [  7]   0.00-81.87  sec  0.00 Bytes  0.00 bits/sec                  receiver
+    [h4 iperf3] stderr: iperf3: error - control socket has closed unexpectedly | last output: [  7]   0.00-81.83  sec  99.0 KBytes  9.91 Kbits/sec    0             sender | [  7]   0.00-81.83  sec  0.00 Bytes  0.00 bits/sec                  receiver
   [t=8s] h1 (legit EF): DEMOTED (R_avg=0.02 Mbps, T=0.01) [demotion filter active: True]
   [t=8s] h4 (attacker): DEMOTED (R_avg=0.02 Mbps, T=0.01) [demotion filter active: True]
-*** INVALID RUN (trust, attempt 1/3): total delivered 0.05 Mbps - the network collapsed, so this says nothing about the QoS mechanism. Discarding and retrying. ***
-  [t=8s] h4 (attacker): DEMOTED (R_avg=4.77 Mbps, T=-0.39) [demotion filter active: True]
+*** INVALID RUN (trust, attempt 2/3): the whole network collapsed (total delivered 0.05 Mbps). This says nothing about the QoS mechanism. Discarding and retrying. ***
+    [h1 iperf3] stderr: iperf3: error - control socket has closed unexpectedly | last output: Connecting to host 10.0.0.3, port 5201 | [  7] local 10.0.0.1 port 50046 connected to 10.0.0.3 port 5201
+    [h2 iperf3] stderr: iperf3: error - unable to send control message: Broken pipe | last output: [  7]   0.00-70.55  sec  99.0 KBytes  11.5 Kbits/sec    0             sender | [  7]   0.00-70.55  sec  0.00 Bytes  0.00 bits/sec                  receiver
+    [h4 iperf3] stderr: iperf3: error - control socket has closed unexpectedly | last output: Connecting to host 10.0.0.3, port 5203 | [  7] local 10.0.0.4 port 55100 connected to 10.0.0.3 port 5203
+  [t=8s] h4 (attacker): DEMOTED (R_avg=5.21 Mbps, T=-0.60) [demotion filter active: True]
 
 ====================================================================================================
 WEEK 8 - THREE-WAY COMPARISON SUMMARY (all values in Mbps, averaged over the test)
@@ -10,9 +19,9 @@ OFFERED = sent from the host's own interface | DELIVERED = arrived at h3
 ----------------------------------------------------------------------------------------------------
 Scenario        h1 offered  h1 deliv.   h4 offered  h4 deliv.   h2 deliv.   h4 demoted?   note      
 ----------------------------------------------------------------------------------------------------
-No QoS          1.31        1.22        4.04        3.73        5.32        No                      
-Static DSCP     0.12        0.12        3.93        3.87        2.15        No                      
-Trust-Verified  1.55        1.55        6.13        6.13        0.01        Yes (t=8s)    retry x1  
+No QoS          1.17        1.06        4.86        4.22        4.45        No                      
+Static DSCP     1.55        1.55        5.39        5.38        3.02        No                      
+Trust-Verified  1.55        1.55        4.35        4.32        3.91        Yes (t=8s)    retry x2  
 ====================================================================================================
 
 How to read this:
