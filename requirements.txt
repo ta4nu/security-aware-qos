@@ -1,0 +1,6 @@
+# Experiments (experiments/*.py) use only the Python standard library plus Mininet.
+# Mininet, Open vSwitch and iperf3 are installed with apt (see README), not pip.
+# Optional, for plotting and for rebuilding the processed workbook:
+matplotlib
+pandas
+openpyxl
