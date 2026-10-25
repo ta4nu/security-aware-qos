@@ -1,0 +1,13 @@
+t_s,h1_R_avg_Mbps,h1_T,h1_status,h4_R_avg_Mbps,h4_T,h4_status
+2,0.06,0.03,warming up - grace period,0.19,0.1,warming up - grace period
+4,0.86,0.43,warming up - grace period,2.94,0.53,warming up - grace period
+6,1.13,0.56,TRUSTED,3.76,0.12,"suspicious (1/2, not yet demoted)"
+8,1.19,0.6,TRUSTED,4.13,-0.07,SUSPICIOUS x2 -> DEMOTED NOW
+10,1.28,0.64,TRUSTED,4.37,-0.18,SUSPICIOUS (already demoted)
+12,1.33,0.67,TRUSTED,4.53,-0.26,SUSPICIOUS (already demoted)
+14,1.37,0.68,TRUSTED,4.64,-0.32,SUSPICIOUS (already demoted)
+16,1.4,0.7,TRUSTED,4.73,-0.36,SUSPICIOUS (already demoted)
+18,1.42,0.71,TRUSTED,4.82,-0.41,SUSPICIOUS (already demoted)
+20,1.43,0.71,TRUSTED,4.87,-0.44,SUSPICIOUS (already demoted)
+22,1.44,0.72,TRUSTED,4.89,-0.44,SUSPICIOUS (already demoted)
+24,1.32,0.66,TRUSTED,4.48,-0.24,SUSPICIOUS (already demoted)

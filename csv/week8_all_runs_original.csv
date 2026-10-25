@@ -1,0 +1,17 @@
+run,date,scenario,status,h1_offered,h1_delivered,h4_offered,h4_delivered,h2_delivered,h4_demoted,used_in_paper,note
+R1,2026-10-17,none,valid,1.29,1.18,4.45,3.74,4.66,no,yes,
+R1,2026-10-17,static,valid,1.29,1.29,5.25,5.24,2.86,no,yes,
+R1,2026-10-17,trust,excluded,0.03,0.03,0.06,0.06,0.03,yes (h1 too),no,whole network collapsed (total 0.12 Mbps)
+R2,2026-10-18,none,valid,0.57,0.57,6.13,6.13,1.96,no,yes,h1 itself only sent 0.57 Mbps
+R2,2026-10-18,static,valid,1.55,1.54,5.38,5.37,3.02,no,yes,
+R2,2026-10-18,trust,excluded,,0.03,,0.04,0.04,yes (h1 too),no,attempt 1: whole network collapsed (total 0.11 Mbps)
+R2,2026-10-18,trust,excluded,1.56,1.55,5.26,5.25,2.99,yes (h4 only),no,"network normal, but demotion filter was ineffective (tc prio 0 bug, fixed afterwards); matches static"
+R3,2026-10-18,none,valid,1.31,1.22,4.04,3.73,5.32,no,yes,
+R3,2026-10-18,static,excluded,0.12,0.12,3.93,3.87,2.15,no,no,h1 stalled (<0.3 Mbps)
+R3,2026-10-18,trust,excluded,,,,,,yes (h1 too),no,attempt 1: whole network collapsed (total 0.05 Mbps)
+R3,2026-10-18,trust,excluded,1.55,1.55,6.13,6.13,0.01,yes (h4 only),no,h2 stalled (<0.3 Mbps)
+R4,2026-10-18,none,valid,1.17,1.06,4.86,4.22,4.45,no,yes,
+R4,2026-10-18,static,valid,1.55,1.55,5.39,5.38,3.02,no,yes,
+R4,2026-10-18,trust,excluded,,,,,,yes (h1 too),no,attempt 1: whole network collapsed (total 0.03 Mbps)
+R4,2026-10-18,trust,excluded,,,,,,yes (h1 too),no,attempt 2: whole network collapsed (total 0.05 Mbps)
+R4,2026-10-18,trust,valid,1.55,1.55,4.35,4.32,3.91,"yes (h4 only, t=8s)",yes,working demotion filter; valid after 2 discarded attempts

@@ -1,0 +1,17 @@
+Run,Date,Scenario,Status,h1 offered (Mbps),h1 delivered (Mbps),h4 offered (Mbps),h4 delivered (Mbps),h2 delivered (Mbps),h4 demoted?,Used in paper?,Note
+R1,2026-10-17,No QoS,Valid,1.29,1.18,4.45,3.74,4.66,no,Yes,
+R1,2026-10-17,Static DSCP,Valid,1.29,1.29,5.25,5.24,2.86,no,Yes,
+R1,2026-10-17,Trust-Verified,Excluded,0.03,0.03,0.06,0.06,0.03,yes (h1 too),No,whole network collapsed (total 0.12 Mbps)
+R2,2026-10-18,No QoS,Valid,0.57,0.57,6.13,6.13,1.96,no,Yes,h1 itself only sent 0.57 Mbps
+R2,2026-10-18,Static DSCP,Valid,1.55,1.54,5.38,5.37,3.02,no,Yes,
+R2,2026-10-18,Trust-Verified,Excluded,,0.03,,0.04,0.04,yes (h1 too),No,attempt 1: whole network collapsed (total 0.11 Mbps)
+R2,2026-10-18,Trust-Verified,Excluded,1.56,1.55,5.26,5.25,2.99,yes (h4 only),No,"network normal, but demotion filter was ineffective (tc prio 0 bug, fixed afterwards); matches static"
+R3,2026-10-18,No QoS,Valid,1.31,1.22,4.04,3.73,5.32,no,Yes,
+R3,2026-10-18,Static DSCP,Excluded,0.12,0.12,3.93,3.87,2.15,no,No,h1 stalled (<0.3 Mbps)
+R3,2026-10-18,Trust-Verified,Excluded,,,,,,yes (h1 too),No,attempt 1: whole network collapsed (total 0.05 Mbps)
+R3,2026-10-18,Trust-Verified,Excluded,1.55,1.55,6.13,6.13,0.01,yes (h4 only),No,h2 stalled (<0.3 Mbps)
+R4,2026-10-18,No QoS,Valid,1.17,1.06,4.86,4.22,4.45,no,Yes,
+R4,2026-10-18,Static DSCP,Valid,1.55,1.55,5.39,5.38,3.02,no,Yes,
+R4,2026-10-18,Trust-Verified,Excluded,,,,,,yes (h1 too),No,attempt 1: whole network collapsed (total 0.03 Mbps)
+R4,2026-10-18,Trust-Verified,Excluded,,,,,,yes (h1 too),No,attempt 2: whole network collapsed (total 0.05 Mbps)
+R4,2026-10-18,Trust-Verified,Valid,1.55,1.55,4.35,4.32,3.91,"yes (h4 only, t=8s)",Yes,working demotion filter; valid after 2 discarded attempts
